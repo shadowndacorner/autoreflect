@@ -72,3 +72,20 @@ reflect() struct token
     int64_t intval;
     uint64_t uintval;
 };
+
+namespace test
+{
+	inline void test_method()
+	{
+	}
+
+	reflect() struct namespacedStruct
+	{
+		int value;
+	};
+}
+
+reflect() struct another
+{
+	test::namespacedStruct nss;
+};

@@ -7,6 +7,14 @@
 #include <vector>
 
 static thread_local FILE* g_OutFile	= stdout;
+
+struct namespace_t
+{
+	int braces;
+	std::string name;
+};
+
+static thread_local std::vector<namespace_t> namespace_stack;
 static bool generate_static_reflection = true;
 static bool generate_serializers = true;
 
@@ -30,11 +38,18 @@ static string_set g_Enums;
 
 struct enum_class_pair
 {
+	struct field
+	{
+		std::string name;
+		int ptr_cnt;
+	};
+
 	std::string struct_or_class;
 	std::string type_name;
 	std::string enum_name;
 	std::string struct_address;
 	size_t num_fields;
+	std::vector<field> fields;
 };
 
 static std::vector<enum_class_pair> g_EnumStructMapping;
@@ -337,10 +352,40 @@ bool RequireToken(tokenizer* src, token_type type)
 	return tok.type == type;
 }
 
+bool replace(std::string& str, const std::string& from, const std::string& to) {
+	size_t start_pos = str.find(from);
+	if (start_pos == std::string::npos)
+		return false;
+	str.replace(start_pos, from.length(), to);
+	return true;
+}
+
+
 void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_EnumStructMapping, bool shouldWrite)
 {
+	std::string fullName;
+	std::string fullNamePrettier;
 	string_set t_Enums;
 	token nametok = GetToken(src);
+
+	if (namespace_stack.size() > 0)
+	{
+		fullName = std::string(nametok.text, nametok.text_length);
+		fullNamePrettier = std::string(nametok.text, nametok.text_length);
+		for (int i = 0; i < namespace_stack.size(); ++i)
+		{
+			fullName = namespace_stack[i].name + "::" + fullName;
+			fullNamePrettier = namespace_stack[i].name + "_" + fullNamePrettier;
+		}
+		nametok.text = const_cast<char*>(fullName.c_str());
+		nametok.text_length = fullName.length();
+	}
+	else
+	{
+		fullName = std::string(nametok.text, nametok.text_length);
+		fullNamePrettier = std::string(nametok.text, nametok.text_length);
+	}
+
 	//fprintf(g_OutFile, "%.*s %.*s {\n", int(type->text_length), type->text, int(nametok.text_length), nametok.text);
 
 	if (!RequireToken(src, TT_LCurl))
@@ -482,6 +527,8 @@ void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_
 				}
 				enumName.reserve(enumName.length() + fieldtype.text_length);
 				enumName.append(fieldtype.text, fieldtype.text_length);
+				replace(enumName, "::", "_");
+
 				for (int i = 0; i < ptr_cnt; ++i)
 				{
 					enumName.append("Star");
@@ -517,28 +564,34 @@ void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_
 	if (fields.size() > 0)
 	{
 		std::string enumName = "Refl_";
-		enumName.reserve(enumName.length() + nametok.text_length);
-		enumName.append(nametok.text, nametok.text_length);
+		enumName.append(fullNamePrettier);
 
 		std::string structName = "g_ReflectionData_";
-		structName.reserve(structName.length() + nametok.text_length);
-		structName.append(nametok.text, nametok.text_length);
+		structName.reserve(fullNamePrettier.size());
+		structName.append(fullNamePrettier);
 		if (t_Enums.count(enumName) == 0)
 		{
 			t_Enums.insert(enumName);
 		}
 
-		t_EnumStructMapping.push_back({
+		enum_class_pair enum_entry = {
 			std::string(type->text, type->text_length),
 			std::string(nametok.text, nametok.text_length),
 			enumName,
 			structName,
 			fields.size()
-			});
+		};
+
+		for (auto& it : fields)
+		{
+			enum_entry.fields.push_back({ std::string(it.fieldname.text, it.fieldname.text_length), it.ptr_cnt });
+		}
+
+		t_EnumStructMapping.push_back(std::move(enum_entry));
 
 		if (generate_static_reflection)
 		{
-			fprintf(g_OutFile, "refl_data g_ReflectionData_%.*s[] = {\n", int(nametok.text_length), nametok.text);
+			fprintf(g_OutFile, "refl_data g_ReflectionData_%s[] = {\n", fullNamePrettier.c_str());
 			for (size_t i = 0; i < fields.size(); ++i)
 			{
 				auto& enumName = fields[i].enumName;
@@ -554,7 +607,7 @@ void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_
 			fprintf(g_OutFile, "};\n\n");
 		}
 
-		if (generate_serializers)
+		if (generate_serializers && false)
 		{
 			fprintf(g_OutFile, "#if defined(CEREAL_ARCHIVES_BINARY_HPP_)\n");
 			fprintf(g_OutFile, "void serialize(cereal::BinaryInputArchive& arch, %.*s& source) {\n", int(nametok.text_length), nametok.text);
@@ -632,6 +685,7 @@ void ProcessReflect(tokenizer* src, std::vector<enum_class_pair>& t_EnumStructMa
 
 void ProcessFile(char* path, char* enum_path)
 {
+	namespace_stack.clear();
     auto text = GetFileText(path);
 	if (!text)
 	{
@@ -664,15 +718,8 @@ void ProcessFile(char* path, char* enum_path)
 	}
 
 	fprintf(g_OutFile, "#pragma once\n");
-	if (generate_serializers)
-	{
-		fprintf(g_OutFile, "#if defined(REFL_USE_CEREAL)\n");
-		fprintf(g_OutFile, "#include <cereal/archives/binary.hpp>\n");
-		fprintf(g_OutFile, "#endif\n\n");
-	}
-
 	fprintf(g_OutFile, "#include <%s>\n", enum_path);
-	fprintf(g_OutFile, "#include <%s>\n\n", localpath); 
+	fprintf(g_OutFile, "#include <%s>\n\n", localpath);
 
 
     token tok;
@@ -695,8 +742,48 @@ void ProcessFile(char* path, char* enum_path)
 		case TT_String:
 			//printf("\"%.*s\"", int(tok.text_length), tok.text);
 			break;
+		case TT_LCurl:
+			if (namespace_stack.size() > 0)
+			{
+				++namespace_stack.back().braces;
+			}
+			break;
+		case TT_RCurl:
+			if (namespace_stack.size() > 0)
+			{
+				--namespace_stack.back().braces;
+				if (namespace_stack.back().braces == 0)
+				{
+					namespace_stack.pop_back();
+				}
+			}
+			break;
 		case TT_Identifier:
-			if (TokenSays(&tok, "reflect"))
+			if (TokenSays(&tok, "using"))
+			{
+				// to skip using namespace
+				GetToken(&src);
+				break;
+			}
+			else if (TokenSays(&tok, "namespace"))
+			{
+				auto curtok = GetToken(&src);
+				if (curtok.type != TT_Identifier)
+					break;
+
+				namespace_t ns;
+				ns.name = std::string(curtok.text, curtok.text_length);
+
+				if ((curtok = GetToken(&src)).type != TT_LCurl)
+				{
+					fprintf(stderr, "Parser error (%s:%d): Invalid namespace definition: expected curly brace\n", src.file, src.line);
+					exit(-1);
+				}
+				ns.braces = 1;
+				
+				namespace_stack.push_back(std::move(ns));
+			}
+			else if (TokenSays(&tok, "reflect"))
 			{
 				ProcessReflect(&src, t_EnumStructMapping);
 				break;
@@ -741,13 +828,21 @@ void ProcessFile(char* path, char* enum_path)
 
 	if (generate_serializers)
 	{
-		fprintf(enumf, "#if defined(CEREAL_ARCHIVES_BINARY_HPP_)\n");
 		for (auto& it : t_EnumStructMapping)
 		{
-			fprintf(enumf, "void serialize(cereal::BinaryInputArchive& arch, %s& source);\n", it.type_name.c_str());
-			fprintf(enumf, "void serialize(cereal::BinaryOutputArchive& arch, %s& source);\n", it.type_name.c_str());
+			auto& fields = it.fields;
+			fprintf(enumf, "template<typename Archive>\nvoid serialize(Archive& arch, %s& source) {\n", it.type_name.c_str());
+			for (size_t i = 0; i < fields.size(); ++i)
+			{
+				if (fields[i].ptr_cnt > 0)
+					continue;
+
+				fprintf(enumf, "\tarch(source.%s);", fields[i].name.c_str());
+
+				fprintf(enumf, "\n");
+			}
+			fprintf(enumf, "};\n");
 		}
-		fprintf(enumf, "#endif\n");
 	}
 
 	if (generate_static_reflection)

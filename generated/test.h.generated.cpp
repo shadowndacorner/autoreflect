@@ -1,8 +1,4 @@
 #pragma once
-#if defined(REFL_USE_CEREAL)
-#include <cereal/archives/binary.hpp>
-#endif
-
 #include <reflection_common.h>
 #include <test.h>
 
@@ -14,31 +10,9 @@ refl_data g_ReflectionData_some_struct[] = {
 	{Refl_charStar, "char", "someOtherString", (size_t)&((some_struct*)0)->someOtherString, 1}
 };
 
-#if defined(CEREAL_ARCHIVES_BINARY_HPP_)
-void serialize(cereal::BinaryInputArchive& arch, some_struct& source) {
-	arch(source.int_field);
-	arch(source.uint_field);
-	arch(source.somechar);
-};
-void serialize(cereal::BinaryOutputArchive& arch, some_struct& source) {
-	arch(source.int_field);
-	arch(source.uint_field);
-	arch(source.somechar);
-};
-#endif
-
 refl_data g_ReflectionData_some_other_struct[] = {
 	{Refl_int, "int", "test", (size_t)&((some_other_struct*)0)->test, 0}
 };
-
-#if defined(CEREAL_ARCHIVES_BINARY_HPP_)
-void serialize(cereal::BinaryInputArchive& arch, some_other_struct& source) {
-	arch(source.test);
-};
-void serialize(cereal::BinaryOutputArchive& arch, some_other_struct& source) {
-	arch(source.test);
-};
-#endif
 
 refl_data g_ReflectionData_token[] = {
 	{Refl_token_type, "token_type", "type", (size_t)&((token*)0)->type, 0},
@@ -50,22 +24,11 @@ refl_data g_ReflectionData_token[] = {
 	{Refl_uint64_t, "uint64_t", "uintval", (size_t)&((token*)0)->uintval, 0}
 };
 
-#if defined(CEREAL_ARCHIVES_BINARY_HPP_)
-void serialize(cereal::BinaryInputArchive& arch, token& source) {
-	arch(source.type);
-	arch(source.text_length);
-	arch(source.value);
-	arch(source.floatval);
-	arch(source.intval);
-	arch(source.uintval);
+refl_data g_ReflectionData_test_namespacedStruct[] = {
+	{Refl_int, "int", "value", (size_t)&((test::namespacedStruct*)0)->value, 0}
 };
-void serialize(cereal::BinaryOutputArchive& arch, token& source) {
-	arch(source.type);
-	arch(source.text_length);
-	arch(source.value);
-	arch(source.floatval);
-	arch(source.intval);
-	arch(source.uintval);
+
+refl_data g_ReflectionData_another[] = {
+	{Refl_test_namespacedStruct, "test::namespacedStruct", "nss", (size_t)&((another*)0)->nss, 0}
 };
-#endif
 

@@ -17,6 +17,8 @@ enum ReflectionType {
 	Refl_some_other_struct,
 	Refl_uint64_t,
 	Refl_token,
+	Refl_test_namespacedStruct,
+	Refl_another,
 	Refl_charStarStar,
 	Refl_reflected_struct,
 	Refl_Count

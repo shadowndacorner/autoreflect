@@ -7,6 +7,10 @@ struct some_other_struct;
 extern refl_data g_ReflectionData_some_other_struct[];
 struct token;
 extern refl_data g_ReflectionData_token[];
+struct test::namespacedStruct;
+extern refl_data g_ReflectionData_test_namespacedStruct[];
+struct another;
+extern refl_data g_ReflectionData_another[];
 template <>
 refl_array get_reflection_data<some_struct>()
 {
@@ -22,14 +26,43 @@ refl_array get_reflection_data<token>()
 {
 	return {g_ReflectionData_token, 7};
 }
-#if defined(CEREAL_ARCHIVES_BINARY_HPP_)
-void serialize(cereal::BinaryInputArchive& arch, some_struct& source);
-void serialize(cereal::BinaryOutputArchive& arch, some_struct& source);
-void serialize(cereal::BinaryInputArchive& arch, some_other_struct& source);
-void serialize(cereal::BinaryOutputArchive& arch, some_other_struct& source);
-void serialize(cereal::BinaryInputArchive& arch, token& source);
-void serialize(cereal::BinaryOutputArchive& arch, token& source);
-#endif
+template <>
+refl_array get_reflection_data<test::namespacedStruct>()
+{
+	return {g_ReflectionData_test_namespacedStruct, 1};
+}
+template <>
+refl_array get_reflection_data<another>()
+{
+	return {g_ReflectionData_another, 1};
+}
+template<typename Archive>
+void serialize(Archive& arch, some_struct& source) {
+	arch(source.int_field);
+	arch(source.uint_field);
+	arch(source.somechar);
+};
+template<typename Archive>
+void serialize(Archive& arch, some_other_struct& source) {
+	arch(source.test);
+};
+template<typename Archive>
+void serialize(Archive& arch, token& source) {
+	arch(source.type);
+	arch(source.text_length);
+	arch(source.value);
+	arch(source.floatval);
+	arch(source.intval);
+	arch(source.uintval);
+};
+template<typename Archive>
+void serialize(Archive& arch, test::namespacedStruct& source) {
+	arch(source.value);
+};
+template<typename Archive>
+void serialize(Archive& arch, another& source) {
+	arch(source.nss);
+};
 template <>
 inline ReflectionType get_type<some_struct>()
 {
@@ -44,4 +77,14 @@ template <>
 inline ReflectionType get_type<token>()
 {
 	return Refl_token;
+}
+template <>
+inline ReflectionType get_type<test::namespacedStruct>()
+{
+	return Refl_test_namespacedStruct;
+}
+template <>
+inline ReflectionType get_type<another>()
+{
+	return Refl_another;
 }
