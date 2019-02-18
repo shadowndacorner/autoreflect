@@ -3,14 +3,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <unordered_set>
 #include <string>
-#include <mutex>
+#include <vector>
 
 static thread_local FILE* g_OutFile	= stdout;
 static bool generate_static_reflection = true;
 static bool generate_serializers = true;
-static std::unordered_set<std::string> g_Enums;
+
+// __cpp_user_defined_literals is a check for MSVC, __cplusplus should work
+// everywhere else
+#if __cplusplus < 201103L && !defined(__cpp_user_defined_literals)
+#include <set>
+typedef std::set<std::string> string_set;
+static string_set g_Enums;
+#if !defined(NO_THREADING)
+#define NO_THREADING
+#endif
+#else
+#if !defined(NO_THREADING)
+#include <mutex>
+#endif
+#include <unordered_set>
+typedef std::unordered_set<std::string> string_set;
+static string_set g_Enums;
+#endif
 
 struct enum_class_pair
 {
@@ -22,8 +38,10 @@ struct enum_class_pair
 };
 
 static std::vector<enum_class_pair> g_EnumStructMapping;
-static std::mutex g_EnumMutex;
 static const char* g_OutDir = NULL;
+#if !defined(NO_THREADING)
+static std::mutex g_EnumMutex;
+#endif
 
 static char* GetFileText(char* path)
 {
@@ -321,7 +339,7 @@ bool RequireToken(tokenizer* src, token_type type)
 
 void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_EnumStructMapping, bool shouldWrite)
 {
-	std::unordered_set<std::string> t_Enums;
+	string_set t_Enums;
 	token nametok = GetToken(src);
 	//fprintf(g_OutFile, "%.*s %.*s {\n", int(type->text_length), type->text, int(nametok.text_length), nametok.text);
 
@@ -572,7 +590,9 @@ void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_
 		}
 	}
 
+#if !defined(NO_THREADING)
 	std::lock_guard<std::mutex> lock(g_EnumMutex);
+#endif
 	for (auto& it : t_Enums)
 	{
 		g_Enums.insert(it);
@@ -740,6 +760,70 @@ void ProcessFile(char* path, char* enum_path)
 	// ENDTODO: Move this section to a generated header file
 }
 
+#if !defined(NO_THREADING)
+struct thread_data_t
+{
+	char** farray;
+	char* enum_path;
+	int minIndex;
+	int maxIndex;
+};
+
+void thread_func(thread_data_t* data)
+{
+	for (int i = data->minIndex; i < data->maxIndex; ++i)
+	{
+		ProcessFile(data->farray[i], data->enum_path);
+	}
+}
+
+int min(int a, int b)
+{
+	return a < b ? a : b;
+}
+
+void process_with_threads(char** fileArray, int fCount, char* enum_outfile, int jobCount)
+{
+	int jobs = jobCount;
+	if (jobs < 1)
+	{
+		jobs = min(std::thread::hardware_concurrency(), fCount);
+	}
+
+	std::vector<std::thread> threads;
+	std::vector<thread_data_t> thread_data;
+	threads.reserve(jobs);
+	thread_data.reserve(jobs);
+	
+	int current = 0;
+	int delta = fCount / jobs;
+	for (int i = 0; i < jobs; ++i)
+	{
+		thread_data_t data;
+		data.farray = fileArray;
+		data.enum_path = enum_outfile;
+		data.minIndex = current;
+		if (i == jobs - 1)
+		{
+			data.maxIndex = fCount;
+		}
+		else
+		{
+			data.maxIndex = current + delta;
+		}
+		current = data.maxIndex;
+		thread_data.push_back(data);
+		threads.push_back(std::thread(&thread_func, &thread_data[i]));
+	}
+
+	for (auto& it : threads)
+	{
+		it.join();
+	}
+}
+
+#endif
+
 #include <chrono>
 int main(int argc, char** argv)
 {
@@ -754,6 +838,7 @@ int main(int argc, char** argv)
 	bool has_enumoutfile = false;
 	char outfile[512] = {0};
 	char enum_outfile[512] = { 0 };
+	int jobcount = -1;
 
     for(int i = 1; i < argc; ++i)
     {
@@ -771,6 +856,21 @@ int main(int argc, char** argv)
 			else
 			{
 				fprintf(stderr, "Error: Attempted to specify output file without providing output file\n");
+				exit(-1);
+			}
+			continue;
+		}
+		if (!strcmp(arg, "-j") || !strcmp(arg, "--jobs"))
+		{
+			if (i < argc - 1)
+			{
+				++i;
+				arg = argv[i];
+				sscanf(arg, "%d", &jobcount);
+			}
+			else
+			{
+				fprintf(stderr, "Error: Attempted to specify job count without providing count\n");
 				exit(-1);
 			}
 			continue;
@@ -815,10 +915,14 @@ int main(int argc, char** argv)
 		strcpy(enum_outfile, "reflection_common.h");
 	}
 
+#if defined(NO_THREADING)
 	for (int i = 0; i < fcount; ++i)
 	{
 		ProcessFile(files[i], enum_outfile);
 	}
+#else
+	process_with_threads(files, fcount, enum_outfile, jobcount);
+#endif
 
 	FILE* enumf = fopen((std::string(g_OutDir ? g_OutDir : "") + enum_outfile).c_str(), "w");
 	if (enumf)
