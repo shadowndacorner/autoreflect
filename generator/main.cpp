@@ -769,7 +769,7 @@ struct thread_data_t
 	int maxIndex;
 };
 
-void thread_func(thread_data_t* data)
+inline void thread_func(thread_data_t* data)
 {
 	for (int i = data->minIndex; i < data->maxIndex; ++i)
 	{
@@ -777,7 +777,7 @@ void thread_func(thread_data_t* data)
 	}
 }
 
-int min(int a, int b)
+inline int min(int a, int b)
 {
 	return a < b ? a : b;
 }
@@ -821,7 +821,6 @@ void process_with_threads(char** fileArray, int fCount, char* enum_outfile, int 
 		it.join();
 	}
 }
-
 #endif
 
 #include <chrono>
@@ -921,7 +920,17 @@ int main(int argc, char** argv)
 		ProcessFile(files[i], enum_outfile);
 	}
 #else
-	process_with_threads(files, fcount, enum_outfile, jobcount);
+	if (jobcount <= 1 || fcount == 1)
+	{
+		for (int i = 0; i < fcount; ++i)
+		{
+			ProcessFile(files[i], enum_outfile);
+		}
+	}
+	else
+	{
+		process_with_threads(files, fcount, enum_outfile, jobcount);
+	}
 #endif
 
 	FILE* enumf = fopen((std::string(g_OutDir ? g_OutDir : "") + enum_outfile).c_str(), "w");
