@@ -1,4 +1,6 @@
 #pragma once
+#define REFL_STATIC_REFLECTION 1
+#define REFL_SERIALIZERS 1
 #if !defined(reflect)
 #define reflect(...)
 #endif
@@ -6,15 +8,16 @@
 enum ReflectionType {
 	Refl_Invalid = -1,
 	Refl_int,
+	Refl_char,
+	Refl_charStar,
+	Refl_some_substruct,
+	Refl_double,
+	Refl_some_other_struct,
 	Refl_token_type,
 	Refl_uint32_t,
 	Refl_int64_t,
-	Refl_char,
-	Refl_charStar,
-	Refl_size_t,
 	Refl_some_struct,
-	Refl_double,
-	Refl_some_other_struct,
+	Refl_size_t,
 	Refl_uint64_t,
 	Refl_token,
 	Refl_test_namespacedStruct,
@@ -22,6 +25,14 @@ enum ReflectionType {
 	Refl_charStarStar,
 	Refl_reflected_struct,
 	Refl_Count
+};
+
+struct refl_data;
+struct refl_array
+{
+	refl_data* address;
+	size_t count;
+	inline refl_data& operator[](size_t index);
 };
 
 struct refl_data
@@ -33,14 +44,10 @@ struct refl_data
 	inline void* get(void* base){return (void*)(((char*)base) + offset);}
 	template <typename T>
 	inline T& get(void* base){return *((T*)(((char*)base) + offset));}
+	refl_array type_data;
 };
 
-struct refl_array
-{
-	refl_data* address;
-	size_t count;
-	inline refl_data& operator[](size_t index){return address[index];}
-};
+refl_data& refl_array::operator[](size_t index){return address[index];}
 
 template <typename T>
 inline ReflectionType get_type()

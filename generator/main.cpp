@@ -591,13 +591,24 @@ void ProcessStruct(tokenizer* src, token* type, std::vector<enum_class_pair>& t_
 
 		if (generate_static_reflection)
 		{
+			//fprintf(g_OutFile, "refl_data g_ReflectionData_%s[];", fullNamePrettier.c_str());
 			fprintf(g_OutFile, "refl_data g_ReflectionData_%s[] = {\n", fullNamePrettier.c_str());
 			for (size_t i = 0; i < fields.size(); ++i)
 			{
+				// TODO: Generate this later using global list of reflection data enums
 				auto& enumName = fields[i].enumName;
 				auto& fieldtype = fields[i].type;
 				auto& fieldname = fields[i].fieldname;
-				fprintf(g_OutFile, "\t{%s, \"%.*s\", \"%.*s\", (size_t)&((%.*s*)0)->%.*s, %d}", enumName.c_str(), int(fieldtype.text_length), fieldtype.text, int(fieldname.text_length), fieldname.text, int(nametok.text_length), nametok.text, int(fieldname.text_length), fieldname.text, fields[i].ptr_cnt);
+				std::string tablename = (std::string("g_ReflectionData_") + fullNamePrettier).c_str();
+				fprintf(g_OutFile, "\t{%s, \"%.*s\", \"%.*s\", (size_t)&((%.*s*)0)->%.*s, %d, 0, {0, 0}}", 
+					enumName.c_str(), 
+					int(fieldtype.text_length), fieldtype.text, 
+					int(fieldname.text_length), fieldname.text, 
+					int(nametok.text_length), nametok.text, 
+					int(fieldname.text_length), fieldname.text, 
+					fields[i].ptr_cnt
+					/*, tablename.c_str(), int(fields.size())*/);
+
 				// just continue on, scotty
 				if (i < fields.size() - 1)
 					fprintf(g_OutFile, ",");
@@ -831,17 +842,24 @@ void ProcessFile(char* path, char* enum_path)
 		for (auto& it : t_EnumStructMapping)
 		{
 			auto& fields = it.fields;
-			fprintf(enumf, "template<typename Archive>\nvoid serialize(Archive& arch, %s& source) {\n", it.type_name.c_str());
+			fprintf(enumf, "template<typename Archive>\ninline void serialize(Archive& arch, %s& source) {\n", it.type_name.c_str());
 			for (size_t i = 0; i < fields.size(); ++i)
 			{
 				if (fields[i].ptr_cnt > 0)
 					continue;
 
-				fprintf(enumf, "\tarch(source.%s);", fields[i].name.c_str());
-
-				fprintf(enumf, "\n");
+				fprintf(enumf, "\t#if defined(CEREAL_CEREAL_HPP_)\n");
+				fprintf(enumf, "\tif (!(cereal::traits::is_text_archive<Archive>::value && Archive::is_loading::value)) {\n");
+				fprintf(enumf, "\t\tarch(cereal::make_nvp(\"%s\", source.%s));\n", fields[i].name.c_str(), fields[i].name.c_str());
+				fprintf(enumf, "\t} else {\n");
+				fprintf(enumf, "\ttry{\n");
+				fprintf(enumf, "\t\tarch(cereal::make_nvp(\"%s\", source.%s));\n", fields[i].name.c_str(), fields[i].name.c_str());
+				fprintf(enumf, "\t}catch(cereal::Exception&){/*this is necessary because cereal has no support for optional named fields*/}\n\t}\n");
+				fprintf(enumf, "\t#else\n");
+				fprintf(enumf, "\tarch(source.%s);\n", fields[i].name.c_str());
+				fprintf(enumf, "\t#endif\n");
 			}
-			fprintf(enumf, "};\n");
+			fprintf(enumf, "}\n");
 		}
 	}
 
@@ -1033,6 +1051,17 @@ int main(int argc, char** argv)
 	{
 		fprintf(stdout, "Writing to common header %s...\n", enum_outfile);
 		fprintf(enumf, "#pragma once\n");
+
+		if (generate_static_reflection)
+		{
+			fprintf(enumf, "#define REFL_STATIC_REFLECTION 1\n");
+		}
+
+		if (generate_serializers)
+		{
+			fprintf(enumf, "#define REFL_SERIALIZERS 1\n");
+		}
+
 		fprintf(enumf, "#if !defined(reflect)\n");
 		fprintf(enumf, "#define reflect(...)\n");
 		fprintf(enumf, "#endif\n\n");
@@ -1050,8 +1079,10 @@ int main(int argc, char** argv)
 			fprintf(enumf, "\tRefl_Count\n");
 
 			fprintf(enumf, "};\n\n");
-			fprintf(enumf, "struct refl_data\n{\n\tReflectionType type;\n\tchar* type_name;\n\tchar* fieldname;\n\tsize_t offset;int ptr_cnt;size_t ptr_count_offset;\n\tinline void* get(void* base){return (void*)(((char*)base) + offset);}\n\ttemplate <typename T>\n\tinline T& get(void* base){return *((T*)(((char*)base) + offset));}\n};\n\n");
-			fprintf(enumf, "struct refl_array\n{\n\trefl_data* address;\n\tsize_t count;\n\tinline refl_data& operator[](size_t index){return address[index];}\n};\n\n");
+			fprintf(enumf, "struct refl_data;\n");
+			fprintf(enumf, "struct refl_array\n{\n\trefl_data* address;\n\tsize_t count;\n\tinline refl_data& operator[](size_t index);\n};\n\n");
+			fprintf(enumf, "struct refl_data\n{\n\tReflectionType type;\n\tchar* type_name;\n\tchar* fieldname;\n\tsize_t offset;int ptr_cnt;size_t ptr_count_offset;\n\tinline void* get(void* base){return (void*)(((char*)base) + offset);}\n\ttemplate <typename T>\n\tinline T& get(void* base){return *((T*)(((char*)base) + offset));}\n\trefl_array type_data;\n};\n\n");
+			fprintf(enumf, "refl_data& refl_array::operator[](size_t index){return address[index];}\n\n");
 			fprintf(enumf, "template <typename T>\ninline ReflectionType get_type()\n{\n\tstatic_asset(sizeof(T) == -1, \"Attempted to read reflected type of unregistered type; you may have forgotten to include a generated header\");\n\treturn Refl_Invalid;\n}\n");
 			fprintf(enumf, "template <typename T>\nrefl_array get_reflection_data()\n{\n\tstatic_assert(sizeof(T) == -1, \"Attempted to read reflection data of unregistered type; you may have forgotten to include a generated header\");\n\treturn {0};\n}\n");
 			fprintf(enumf, "template <typename T>\nrefl_array get_reflection_data(const T&)\n{\n\treturn get_reflection_data<T>();\n}\n");

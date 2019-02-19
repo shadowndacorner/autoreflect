@@ -14,3 +14,9 @@ file(GLOB_RECURSE GENERATED_FILES
 add_executable(sample ${GENERATED_FILES} sample.cpp)
 target_include_directories(sample PUBLIC ${GENERATED_DIR})
 target_include_directories(sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(CEREAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../3rdParty/cereal/include)
+if (EXISTS ${CEREAL_DIR})
+    add_definitions(-DWITH_CEREAL)
+    target_include_directories(sample PUBLIC ${CEREAL_DIR})
+endif()

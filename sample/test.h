@@ -2,14 +2,29 @@
 #include <stdint.h>
 #include <reflection_common.h>
 
+//namespace nspace
+//{
+	reflect() struct some_substruct
+	{
+		int sub;
+		char subchar;
+	};
+//}
+
+reflect() struct some_other_struct
+{
+    int test;
+};
+
+
 reflect() struct some_struct
 {
-    // this is a method
-    void test(int arg1, const char& arg2);
+	// this is a method
+	void test(int arg1, const char& arg2);
 
-    /* this is a block comment */
-    int int_field;
-    uint32_t uint_field;
+	/* this is a block comment */
+	int int_field;
+	uint32_t uint_field;
 	char somechar;
 	char* someString;
 
@@ -22,11 +37,8 @@ reflect() struct some_struct
 	}
 
 	char* someOtherString;
-};
-
-reflect() struct some_other_struct
-{
-    int test;
+	some_substruct substruct;
+	some_other_struct so_substr;
 };
 
 enum token_type
